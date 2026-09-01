@@ -496,6 +496,41 @@ spec:
             value: pipelines-as-code-secret
           - name: tokenKey
             value: password
+    - name: test-vllm-omni-multimodal-inference
+      params:
+        - name: container-name
+          value: "$(params.container-name)"
+        - name: debug
+          value: "$(params.debug)"
+        - name: host-access-secret-name
+          value: "mapt-rhel-$(context.pipelineRun.name)"
+        - name: model-names
+          value: ["$(params.model-names[*])"]
+      runAfter:
+        - test-inference
+      when:
+        - input: $(tasks.create-configuration.results.is-vllm-omni)
+          operator: in
+          values: ["true"]
+      taskRef:
+        resolver: git
+        params:
+          - name: org
+            value: redhat
+          - name: repo
+            value: rhel-ai/konflux-data
+          - name: scmType
+            value: gitlab
+          - name: serverURL
+            value: https://gitlab.com
+          - name: revision
+            value: main
+          - name: pathInRepo
+            value: tasks/test-vllm-omni-multimodal-inference.yaml
+          - name: token
+            value: pipelines-as-code-secret
+          - name: tokenKey
+            value: password
   finally:
     - name: delete-vm-aws
       params:
