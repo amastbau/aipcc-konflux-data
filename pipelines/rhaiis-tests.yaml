@@ -83,7 +83,7 @@ spec:
           - name: serverURL
             value: https://gitlab.com
           - name: revision
-            value: main
+            value: AIPCC-29355-vllm-omni-multimodal-its
           - name: pathInRepo
             value: tasks/config-from-snapshot.yaml
           - name: token
@@ -489,7 +489,7 @@ spec:
           - name: serverURL
             value: https://gitlab.com
           - name: revision
-            value: main
+            value: AIPCC-29355-vllm-omni-multimodal-its
           - name: pathInRepo
             value: tasks/test-inference.yaml
           - name: token
@@ -524,7 +524,7 @@ spec:
           - name: serverURL
             value: https://gitlab.com
           - name: revision
-            value: main
+            value: AIPCC-29355-vllm-omni-multimodal-its
           - name: pathInRepo
             value: tasks/test-vllm-omni-multimodal-inference.yaml
           - name: token
