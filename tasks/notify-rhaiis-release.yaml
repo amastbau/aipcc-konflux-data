@@ -1,0 +1,65 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: notify-release
+spec:
+  description: Notify the Quay push webhook for tagged AIPCC release images.
+  params:
+    - name: release
+      type: string
+  steps:
+    - name: post-release-images
+      image: quay.io/konflux-ci/release-service-utils@sha256:c1e1ac19eb85d2e32bc12cac94d6b68198610b1ad7ca8e1d5460670d687c0bd4
+      env:
+        - name: RELEASE
+          value: $(params.release)
+      script: |
+        #!/usr/bin/env bash
+        set -euo pipefail
+
+        WEBHOOK_URL="https://n8n.apps.modelsibm.ibmmodel.rh-ods.com/webhook/quay-push"
+        artifacts=$(get-resource "release" "${RELEASE}" "{.status.artifacts}")
+        payloads_file=$(mktemp)
+        payload_file=$(mktemp)
+        trap 'rm -f "${payloads_file}" "${payload_file}"' EXIT
+
+        jq -c -n \
+          --argjson artifacts "${artifacts}" '
+          [
+            $artifacts.images[]? as $released
+            | $released.urls[]?
+            | sub("@.*$"; "")
+            | try capture("^(?<docker_url>quay\\.io/aipcc/.+):(?<tag>[^/:@]+)$")
+            | . as $released_url
+            | {
+                docker_url: $released_url.docker_url,
+                repository: ($released_url.docker_url | sub("^[^/]+/"; "")),
+                updated_tags: [$released_url.tag]
+              }
+          ]
+          | group_by(.docker_url)
+          | map({
+              repository: .[0].repository,
+              docker_url: .[0].docker_url,
+              updated_tags: ([.[].updated_tags[]] | unique)
+            })
+          ' > "${payloads_file}"
+
+        if [ "$(jq 'length' "${payloads_file}")" -eq 0 ]; then
+          echo "Release contains no tagged aipcc Quay image URLs" >&2
+          exit 1
+        fi
+
+        while IFS= read -r payload; do
+          printf '%s\n' "${payload}" > "${payload_file}"
+          curl \
+            --request POST \
+            --fail-with-body \
+            --silent \
+            --show-error \
+            --connect-timeout 10 \
+            --max-time 60 \
+            --header "Content-Type: application/json" \
+            --data-binary "@${payload_file}" \
+            "${WEBHOOK_URL}"
+        done < <(jq -c '.[]' "${payloads_file}")

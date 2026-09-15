@@ -1,0 +1,34 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: report-task-statuses
+spec:
+  description: Report the statuses of RHAIIS post-publication finalization tasks.
+  params:
+    - name: clair-copy-status
+      type: string
+    - name: notification-status
+      type: string
+    - name: release
+      type: string
+    - name: pipeline-run-name
+      type: string
+  steps:
+    - name: report
+      image: quay.io/konflux-ci/release-service-utils@sha256:d84bb7da0988c3cbce65ed714beddda4694b9e3201af56a135ac5843a05abe1e
+      env:
+        - name: CLAIR_COPY_STATUS
+          value: $(params.clair-copy-status)
+        - name: NOTIFICATION_STATUS
+          value: $(params.notification-status)
+        - name: RELEASE
+          value: $(params.release)
+        - name: PIPELINE_RUN_NAME
+          value: $(params.pipeline-run-name)
+      script: |
+        #!/usr/bin/env bash
+        set -euo pipefail
+        echo "copy-clair-scan-results=${CLAIR_COPY_STATUS}"
+        echo "notify-release=${NOTIFICATION_STATUS}"
+        echo "release=${RELEASE}"
+        echo "pipeline-run=${PIPELINE_RUN_NAME}"

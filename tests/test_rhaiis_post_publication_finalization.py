@@ -9,6 +9,13 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PIPELINE_PATH = REPO_ROOT / "pipelines" / "rhaiis-post-publication-finalization.yaml"
+TASK_PATHS = {
+    "copy-clair-scan-results": REPO_ROOT / "tasks" / "copy-clair-scan-results.yaml",
+    "notify-release": REPO_ROOT / "tasks" / "notify-rhaiis-release.yaml",
+    "report-task-statuses": REPO_ROOT
+    / "tasks"
+    / "report-rhaiis-post-publication-finalization-status.yaml",
+}
 
 
 def _pipeline():
@@ -16,8 +23,8 @@ def _pipeline():
 
 
 def _task_script(task_name):
-    task = next(task for task in _pipeline()["spec"]["tasks"] if task["name"] == task_name)
-    return task["taskSpec"]["steps"][0]["script"]
+    task = yaml.safe_load(TASK_PATHS[task_name].read_text())
+    return task["spec"]["steps"][0]["script"]
 
 
 def _make_command(bin_dir, name, script):
@@ -158,6 +165,36 @@ def test_notification_stops_after_a_nonzero_http_failure(tmp_path):
 
     assert result.returncode == 22
     assert (tmp_path / "curl-count").read_text() == "1"
+
+
+def test_pipeline_delegates_finalization_steps_to_reusable_git_resolved_tasks():
+    """Removing a taskRef or restoring an inline taskSpec must fail this contract."""
+    pipeline = _pipeline()
+    expected_paths = {
+        "copy-clair-scan-results": "tasks/copy-clair-scan-results.yaml",
+        "notify-release": "tasks/notify-rhaiis-release.yaml",
+        "report-task-statuses": "tasks/report-rhaiis-post-publication-finalization-status.yaml",
+    }
+    pipeline_tasks = {
+        task["name"]: task
+        for task in [*pipeline["spec"]["tasks"], *pipeline["spec"]["finally"]]
+    }
+
+    for task_name, path_in_repo in expected_paths.items():
+        task = pipeline_tasks[task_name]
+        assert "taskSpec" not in task
+        assert task["taskRef"] == {
+            "resolver": "git",
+            "params": [
+                {"name": "url", "value": "https://github.com/red-hat-data-services/aipcc-konflux-data"},
+                {"name": "revision", "value": "main"},
+                {"name": "pathInRepo", "value": path_in_repo},
+            ],
+        }
+
+        reusable_task = yaml.safe_load(TASK_PATHS[task_name].read_text())
+        assert reusable_task["kind"] == "Task"
+        assert reusable_task["metadata"]["name"] == task_name
 
 
 def test_pipeline_keeps_the_runtime_interface_and_reports_task_statuses():
