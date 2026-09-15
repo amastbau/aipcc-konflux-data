@@ -12,9 +12,12 @@ spec:
       type: string
     - name: target-repo
       type: string
+      default: ""
   tasks:
     - name: copy-clair-scan-results-task
       params:
+        - name: release
+          value: $(params.release)
         - name: snapshot
           value: $(params.snapshot)
         - name: target-repo

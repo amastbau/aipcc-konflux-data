@@ -21,6 +21,7 @@ def test_clair_copy_pipeline_uses_the_reusable_git_resolved_task():
         ],
     }
     assert task["params"] == [
+        {"name": "release", "value": "$(params.release)"},
         {"name": "snapshot", "value": "$(params.snapshot)"},
         {"name": "target-repo", "value": "$(params.target-repo)"},
     ]

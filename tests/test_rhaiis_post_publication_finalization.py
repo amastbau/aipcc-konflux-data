@@ -74,8 +74,79 @@ def test_copies_clair_reports_to_the_explicit_target_repository(tmp_path):
 
     assert result.returncode == 0, result.stderr
     assert (tmp_path / "skopeo.txt").read_text().splitlines() == [
-        "copy docker://quay.io/aipcc/rhaiis/cuda@sha256:report-one docker://quay.io/aipcc/rhaiis/reports@sha256:report-one",
-        "copy docker://quay.io/aipcc/rhaiis/cuda@sha256:report-two docker://quay.io/aipcc/rhaiis/reports@sha256:report-two",
+        "copy --src-authfile /creds/pull/config.json --dest-authfile /creds/push/config.json docker://quay.io/aipcc/rhaiis/cuda@sha256:report-one docker://quay.io/aipcc/rhaiis/reports@sha256:report-one",
+        "copy --src-authfile /creds/pull/config.json --dest-authfile /creds/push/config.json docker://quay.io/aipcc/rhaiis/cuda@sha256:report-two docker://quay.io/aipcc/rhaiis/reports@sha256:report-two",
+    ]
+
+
+def test_copies_clair_reports_for_the_component_published_by_the_release(tmp_path):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    _make_command(
+        bin_dir,
+        "get-resource",
+        '''case "$1" in
+snapshot) printf "%s\\n" "$SNAPSHOT_RESOURCE" ;;
+release) printf "%s\\n" "$RELEASE_ARTIFACTS" ;;
+*) exit 2 ;;
+esac
+''',
+    )
+    attestation = {
+        "predicate": {
+            "buildConfig": {
+                "tasks": [
+                    {
+                        "name": "clair-scan",
+                        "results": [{"name": "REPORTS", "value": '["sha256:cuda-report"]'}],
+                    }
+                ]
+            }
+        }
+    }
+    payload = base64.b64encode(json.dumps(attestation).encode()).decode()
+    _make_command(bin_dir, "cosign", f"printf '%s\\n' '{{\"payload\": \"{payload}\"}}'\n")
+    _make_command(bin_dir, "skopeo", 'printf "%s\\n" "$*" >> "$CAPTURE_DIR/skopeo.txt"\n')
+
+    result = subprocess.run(
+        ["bash", "-c", _task_script("copy-clair-scan-results")],
+        check=False,
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "PATH": f"{bin_dir}:{os.environ['PATH']}",
+            "RELEASE": "ai-tenant/rhaiis-release",
+            "SNAPSHOT": "ai-tenant/rhaiis-snapshot",
+            "TARGET_REPO": "",
+            "SNAPSHOT_RESOURCE": json.dumps(
+                {
+                    "components": [
+                        {"name": "cpu", "containerImage": "quay.io/aipcc/rhaiis/cpu@sha256:cpu"},
+                        {
+                            "name": "cuda",
+                            "containerImage": "quay.io/aipcc/rhaiis/cuda-ubi9@sha256:cuda",
+                        },
+                    ]
+                }
+            ),
+            "RELEASE_ARTIFACTS": json.dumps(
+                {
+                    "images": [
+                        {
+                            "name": "cuda",
+                            "urls": ["quay.io/aipcc/rhaiis/cuda-ubi9:3.6.0-fast.1"],
+                        }
+                    ]
+                }
+            ),
+            "CAPTURE_DIR": str(tmp_path),
+        },
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / "skopeo.txt").read_text().splitlines() == [
+        "copy --src-authfile /creds/pull/config.json --dest-authfile /creds/push/config.json docker://quay.io/aipcc/rhaiis/cuda-ubi9@sha256:cuda-report docker://quay.io/aipcc/rhaiis/cuda-ubi9@sha256:cuda-report"
     ]
 
 
@@ -206,11 +277,20 @@ def test_pipeline_keeps_the_runtime_interface_and_reports_task_statuses():
         "snapshot",
         "target-repo",
     ]
-    assert all("default" not in param for param in params)
+    assert {param["name"]: param.get("default") for param in params} == {
+        "release": None,
+        "releasePlan": None,
+        "snapshot": None,
+        "target-repo": "",
+    }
 
     tasks = {task["name"]: task for task in pipeline["spec"]["tasks"]}
     clair_params = {param["name"]: param["value"] for param in tasks["copy-clair-scan-results"]["params"]}
-    assert clair_params == {"snapshot": "$(params.snapshot)", "target-repo": "$(params.target-repo)"}
+    assert clair_params == {
+        "release": "$(params.release)",
+        "snapshot": "$(params.snapshot)",
+        "target-repo": "$(params.target-repo)",
+    }
     assert {param["name"]: param["value"] for param in tasks["notify-release"]["params"]} == {
         "release": "$(params.release)"
     }
