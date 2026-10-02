@@ -220,6 +220,9 @@ spec:
         - name: IMAGES
           value:
           - $(tasks.build-vm-image.results.IMAGE_REFERENCE[*])
+        - name: IMAGE_PLATFORM_MAP
+          value:
+          - $(tasks.build-vm-image.results.IMAGE_PLATFORM_MAP[*])
       runAfter:
         - build-vm-image
       taskRef:
